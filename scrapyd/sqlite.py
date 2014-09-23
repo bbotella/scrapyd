@@ -64,6 +64,7 @@ class SqliteDict(DictMixin):
         return text
 
 
+
 class PickleSqliteDict(SqliteDict):
 
     def encode(self, obj):
@@ -162,6 +163,85 @@ class PickleSqlitePriorityQueue(SqlitePriorityQueue):
 
 
 class JsonSqlitePriorityQueue(SqlitePriorityQueue):
+
+    def encode(self, obj):
+        return json.dumps(obj)
+
+    def decode(self, text):
+        return json.loads(text)
+
+
+
+
+
+
+
+class SqliteList(object):
+    """SQLite priority queue. It relies on SQLite concurrency support for
+    providing atomic inter-process operations.
+    """
+
+    def __init__(self, database=None, table="queue"):
+        self.database = database or ':memory:'
+        self.table = table
+        # about check_same_thread: http://twistedmatrix.com/trac/ticket/4040
+        self.conn = sqlite3.connect(self.database, check_same_thread=False)
+        q = "create table if not exists %s (id integer primary key, " \
+            "priority real key, message blob)" % table
+        self.conn.execute(q)
+
+    def put(self, message):
+        args = self.encode(message)
+        q = "insert into %s (message) values (?)" % self.table
+        self.conn.execute(q, args)
+        self.conn.commit()
+
+    def pop(self):
+        q = "select id, message from %s order by id desc limit 1" \
+            % self.table
+        idmsg = self.conn.execute(q).fetchone()
+        if idmsg is None:
+            return
+        id, msg = idmsg
+        q = "delete from %s where id=?" % self.table
+        c = self.conn.execute(q, (id,))
+        if not c.rowcount: # record vanished, so let's try again
+            self.conn.rollback()
+            return self.pop()
+        self.conn.commit()
+        return self.decode(msg)
+
+
+    def clear(self):
+        self.conn.execute("delete from %s" % self.table)
+        self.conn.commit()
+
+    def __len__(self):
+        q = "select count(*) from %s" % self.table
+        return self.conn.execute(q).fetchone()[0]
+
+    def __iter__(self):
+        q = "select message, id from %s order by priority desc" % \
+            self.table
+        return ((self.decode(x), y) for x, y in self.conn.execute(q))
+
+    def encode(self, obj):
+        return obj
+
+    def decode(self, text):
+        return text
+
+
+class PickleSqliteList(SqliteList):
+
+    def encode(self, obj):
+        return buffer(cPickle.dumps(obj, protocol=2))
+
+    def decode(self, text):
+        return cPickle.loads(str(text))
+
+
+class JsonSqliteList(SqliteList):
 
     def encode(self, obj):
         return json.dumps(obj)

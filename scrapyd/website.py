@@ -144,7 +144,7 @@ class Jobs(resource.Resource):
             s += "<td>%s</td>" % (p.end_time - p.start_time)
             s += "<td><a href='/logs/%s/%s/%s.log'>Log</a></td>" % (p.project, p.spider, p.job)
             s += "</tr>"
-        return s
+        return str(s)
 
     def render_header(self):
         s = ""

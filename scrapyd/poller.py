@@ -1,7 +1,7 @@
 from zope.interface import implements
 from twisted.internet.defer import DeferredQueue, inlineCallbacks, maybeDeferred, returnValue
 
-from .utils import get_spider_queues
+from .utils import get_spider_queues, get_spider_running, get_spider_finished
 from .interfaces import IPoller
 
 class QueuePoller(object):
@@ -28,6 +28,8 @@ class QueuePoller(object):
 
     def update_projects(self):
         self.queues = get_spider_queues(self.config)
+        self.running = get_spider_running(self.config)
+        self.finished = get_spider_finished(self.config)
 
     def _message(self, queue_msg, project):
         d = queue_msg.copy()
