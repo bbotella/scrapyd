@@ -1,3 +1,5 @@
+from dateutil import parser
+import json
 import sys
 from datetime import datetime
 from multiprocessing import cpu_count
@@ -7,7 +9,8 @@ from twisted.application.service import Service
 from twisted.python import log
 
 from scrapy.utils.python import stringify_dict
-from scrapyd.utils import get_crawl_args
+from scrapyd.scheduler import SpiderScheduler
+from scrapyd.utils import get_crawl_args, get_spider_running, get_spider_finished
 from scrapyd import __version__
 from .interfaces import IPoller, IEnvironment
 
@@ -22,8 +25,26 @@ class Launcher(Service):
         self.max_proc = self._get_max_proc(config)
         self.runner = config.get('runner', 'scrapyd.runner')
         self.app = app
+        self.config = config
 
     def startService(self):
+        spider_scheduler = SpiderScheduler(self.config)
+        running = get_spider_running(self.config)
+        project = running.keys()[0]
+        runner_db = running[project]
+        for item in runner_db.iteritems():
+            spider_scheduler.schedule(project, str(item[1]['_spider']), _job=str(item[0]), domain=str(item[1]['domain']), settings=item[1]['settings'])
+
+        finished_jobs = get_spider_finished(self.config)
+        finished_db = finished_jobs[project]
+        for item in finished_db.iteritems():
+            item = json.loads(item[1])
+            pp = ScrapyProcessProtocol(item['slot'], item['project'], item['spider'], item['job'], item['env'], domain=item['domain'])
+
+            pp.end_time = parser.parse(item['end_time'])
+
+            pp.start_time = parser.parse(item['start_time'])
+            self.finished.append(pp)
         for slot in range(self.max_proc):
             self._wait_for_project(slot)
         log.msg(format='Scrapyd %(version)s started: max_proc=%(max_proc)r, runner=%(runner)r',
@@ -37,6 +58,9 @@ class Launcher(Service):
     def _spawn_process(self, message, slot):
         msg = stringify_dict(message, keys_only=False)
         project = msg['_project']
+        running = get_spider_running(self.config)
+        runner_db = running[project]
+        runner_db.__setitem__(msg['_job'], msg)
         args = [sys.executable, '-m', self.runner, 'crawl']
         args += get_crawl_args(msg)
         e = self.app.getComponent(IEnvironment)
@@ -48,10 +72,18 @@ class Launcher(Service):
         reactor.spawnProcess(pp, sys.executable, args=args, env=env)
         self.processes[slot] = pp
 
-    def _process_finished(self, _, slot):
+    def _process_finished(self, msg, slot):
         process = self.processes.pop(slot)
         process.end_time = datetime.now()
         self.finished.append(process)
+        running = get_spider_running(self.config)
+        finished_jobs = get_spider_finished(self.config)
+        project = msg.project
+        runner_db = running[project]
+        finished_db = finished_jobs[project]
+        runner_db.__delitem__(msg.job)
+        msg.protocol_dict['end_time'] = str(process.end_time)
+        finished_db.__setitem__(msg.job, msg.get_json())
         del self.finished[:-self.finished_to_keep] # keep last 100 finished jobs
         self._wait_for_project(slot)
 
@@ -80,6 +112,17 @@ class ScrapyProcessProtocol(protocol.ProcessProtocol):
         self.itemsfile = env.get('SCRAPY_FEED_URI')
         self.deferred = defer.Deferred()
         self.domain = domain
+        self.protocol_dict = {}
+        self.protocol_dict['slot'] = slot
+        self.protocol_dict['pid'] = self.pid
+        self.protocol_dict['project'] = project
+        self.protocol_dict['start_time'] = str(self.start_time)
+        self.protocol_dict['end_time'] = self.end_time
+        self.protocol_dict['env'] = env
+        self.protocol_dict['domain'] = domain
+        self.protocol_dict['spider'] = spider
+        self.protocol_dict['job'] = job
+
 
     def outReceived(self, data):
         log.msg(data.rstrip(), system="Launcher,%d/stdout" % self.pid)
@@ -89,6 +132,7 @@ class ScrapyProcessProtocol(protocol.ProcessProtocol):
 
     def connectionMade(self):
         self.pid = self.transport.pid
+        self.protocol_dict['pid'] = self.pid
         self.log("Process started: ")
 
     def processEnded(self, status):
@@ -102,3 +146,6 @@ class ScrapyProcessProtocol(protocol.ProcessProtocol):
         fmt = '%(action)s project=%(project)r spider=%(spider)r job=%(job)r pid=%(pid)r log=%(log)r items=%(items)r'
         log.msg(format=fmt, action=action, project=self.project, spider=self.spider,
                 job=self.job, pid=self.pid, log=self.logfile, items=self.itemsfile)
+
+    def get_json(self):
+        return json.dumps(self.protocol_dict)

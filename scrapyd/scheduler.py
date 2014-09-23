@@ -1,7 +1,8 @@
 from zope.interface import implements
 
 from .interfaces import ISpiderScheduler
-from .utils import get_spider_queues
+from .utils import get_spider_queues, get_spider_running, get_spider_finished
+
 
 class SpiderScheduler(object):
 
@@ -20,3 +21,5 @@ class SpiderScheduler(object):
 
     def update_projects(self):
         self.queues = get_spider_queues(self.config)
+        self.running = get_spider_running(self.config)
+        self.finished = get_spider_finished(self.config)
