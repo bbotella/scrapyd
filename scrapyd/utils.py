@@ -1,5 +1,7 @@
 import sys
 import os
+from scrapyd.spiderfinished import SqliteSpiderFinished
+from scrapyd.spiderrunning import SqliteSpiderRunning
 from .sqlite import JsonSqliteDict
 from subprocess import Popen, PIPE
 from ConfigParser import NoSectionError
@@ -60,6 +62,27 @@ def get_spider_queues(config):
         dbpath = os.path.join(dbsdir, '%s.db' % project)
         d[project] = SqliteSpiderQueue(dbpath)
     return d
+
+def get_spider_running(config):
+    dbsdir = config.get('dbs_dir', 'dbs')
+    if not os.path.exists(dbsdir):
+        os.makedirs(dbsdir)
+    d = {}
+    for project in get_project_list(config):
+        dbpath = os.path.join(dbsdir, '%s.db' % project)
+        d[project] = SqliteSpiderRunning(dbpath)
+    return d
+
+def get_spider_finished(config):
+    dbsdir = config.get('dbs_dir', 'dbs')
+    if not os.path.exists(dbsdir):
+        os.makedirs(dbsdir)
+    d = {}
+    for project in get_project_list(config):
+        dbpath = os.path.join(dbsdir, '%s.db' % project)
+        d[project] = SqliteSpiderFinished(dbpath)
+    return d
+
 
 def get_project_list(config):
     """Get list of projects by inspecting the eggs dir and the ones defined in
