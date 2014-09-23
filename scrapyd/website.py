@@ -69,33 +69,22 @@ class Home(resource.Resource):
         }
         s = """
 <html>
-<head><title>Scrapyd</title></head>
+<head><title>Mindrop Crawlers</title></head>
 <body>
-<h1>Scrapyd</h1>
+<h1>Mindrop Crawlers</h1>
 <p>Available projects: <b>%(projects)s</b></p>
 <ul>
 <li><a href="/jobs">Jobs</a></li>
 """ % vars
-        if self.local_items:
-            s += '<li><a href="/items/">Items</a></li>'
         s += """
 <li><a href="/logs/">Logs</a></li>
-<li><a href="http://scrapyd.readthedocs.org/en/latest/">Documentation</a></li>
+
 </ul>
-
-<h2>How to schedule a spider?</h2>
-
-<p>To schedule a spider you need to use the API (this web UI is only for
-monitoring)</p>
-
-<p>Example using <a href="http://curl.haxx.se/">curl</a>:</p>
-<p><code>curl http://localhost:6800/schedule.json -d project=default -d spider=somespider</code></p>
-
-<p>For more information about the API, see the <a href="http://scrapyd.readthedocs.org/en/latest/">Scrapyd documentation</a></p>
 </body>
 </html>
 """ % vars
         return s
+
 
 class Jobs(resource.Resource):
 
@@ -103,49 +92,89 @@ class Jobs(resource.Resource):
         resource.Resource.__init__(self)
         self.root = root
         self.local_items = local_items
+        self.TITLE = 'Midrop Crawler Jobs'
+        self.PAGE_TITLE = 'Jobs'
+        self.BACKROUND_COLOR = '#063549'
 
     def render(self, txrequest):
-        cols = 6
-        s = "<html><head><title>Scrapyd</title></head>"
-        s += "<body>"
-        s += "<h1>Jobs</h1>"
-        s += "<p><a href='..'>Go back</a></p>"
-        s += "<table border='1'>"
-        s += "<tr><th>Project</th><th>Spider</th><th>Job</th><th>PID</th><th>Runtime</th><th>Log</th>"
-        if self.local_items:
-            s += "<th>Items</th>"
-            cols = 7
-        s += "</tr>"
-        s += "<tr><th colspan='%s' style='background-color: #ddd'>Pending</th></tr>" % cols
+        cols = 7
+        s = ""
+        s += self.render_header()
+        s += self.render_menu()
+        s += self.render_table()
+        s += self.render_footer()
+        return s
+
+    def render_pending(self):
+        s = ""
         for project, queue in self.root.poller.queues.items():
             for m in queue.list():
                 s += "<tr>"
                 s += "<td>%s</td>" % project
+                s += "<td>"+'<a href="http://'+str(m['domain'])+'" target="_blank">'+str(m['domain'])+'</a>'+"</td>"
                 s += "<td>%s</td>" % str(m['name'])
                 s += "<td>%s</td>" % str(m['_job'])
                 s += "</tr>"
-        s += "<tr><th colspan='%s' style='background-color: #ddd'>Running</th></tr>" % cols
+        return s
+
+    def render_running(self):
+        s = ""
         for p in self.root.launcher.processes.values():
             s += "<tr>"
-            for a in ['project', 'spider', 'job', 'pid']:
-                s += "<td>%s</td>" % getattr(p, a)
+            s += "<td>%s</td>" % getattr(p, 'project')
+            s += "<td>" + '<a href="http://'+getattr(p, 'domain')+'" target="_blank">'+getattr(p, 'domain')+'</a>' + "</td>"
+            s += "<td>%s</td>" % getattr(p, 'spider')
+            s += "<td>%s</td>" % getattr(p, 'job')
+            s += "<td>%s</td>" % getattr(p, 'pid')
             s += "<td>%s</td>" % (datetime.now() - p.start_time)
             s += "<td><a href='/logs/%s/%s/%s.log'>Log</a></td>" % (p.project, p.spider, p.job)
-            if self.local_items:
-                s += "<td><a href='/items/%s/%s/%s.jl'>Items</a></td>" % (p.project, p.spider, p.job)
             s += "</tr>"
-        s += "<tr><th colspan='%s' style='background-color: #ddd'>Finished</th></tr>" % cols
+        return s
+
+
+    def render_finished(self):
+        s = ""
         for p in self.root.launcher.finished:
             s += "<tr>"
-            for a in ['project', 'spider', 'job']:
-                s += "<td>%s</td>" % getattr(p, a)
+            s += "<td>%s</td>" % getattr(p, 'project')
+            s += "<td>" + '<a href="http://'+getattr(p, 'domain')+'" target="_blank">'+getattr(p, 'domain')+'</a>' + "</td>"
+            s += "<td>%s</td>" % getattr(p, 'spider')
+            s += "<td>%s</td>" % getattr(p, 'job')
             s += "<td></td>"
             s += "<td>%s</td>" % (p.end_time - p.start_time)
             s += "<td><a href='/logs/%s/%s/%s.log'>Log</a></td>" % (p.project, p.spider, p.job)
-            if self.local_items:
-                s += "<td><a href='/items/%s/%s/%s.jl'>Items</a></td>" % (p.project, p.spider, p.job)
             s += "</tr>"
-        s += "</table>"
+        return s
+
+    def render_header(self):
+        s = ""
+        s += "<html><head><title>"+self.TITLE+"</title></head>"
+        s += "<body>"
+        s += "<h1>"+self.PAGE_TITLE+"</h1>"
+        return s
+
+    def render_menu(self):
+        s = ""
+        s += "<p><a href='..'>Go back</a></p>"
+        return s
+
+    def render_footer(self):
+        s = ""
         s += "</body>"
         s += "</html>"
+        return s
+
+    def render_table(self):
+        cols = 7
+        s = ""
+        s += "<table border='1'>"
+        s += "<tr><th>Project</th><th>Url</th><th>Spider</th><th>Job</th><th>PID</th><th>Runtime</th><th>Log</th>"
+        s += "</tr>"
+        s += "<tr><th colspan='"+str(cols)+"' style='background-color: "+self.BACKROUND_COLOR+"; color: #fff;'>Pending</th></tr>"
+        s += self.render_pending()
+        s += "<tr><th colspan='"+str(cols)+"' style='background-color: "+self.BACKROUND_COLOR+"; color: #fff;'>Running</th></tr>"
+        s += self.render_running()
+        s += "<tr><th colspan='"+str(cols)+"' style='background-color: "+self.BACKROUND_COLOR+"; color: #fff;'>Finished</th></tr>"
+        s += self.render_finished()
+        s += "</table>"
         return s
