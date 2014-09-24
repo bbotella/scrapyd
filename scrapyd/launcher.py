@@ -30,21 +30,19 @@ class Launcher(Service):
     def startService(self):
         spider_scheduler = SpiderScheduler(self.config)
         running = get_spider_running(self.config)
-        project = running.keys()[0]
-        runner_db = running[project]
-        for item in runner_db.iteritems():
-            spider_scheduler.schedule(project, str(item[1]['_spider']), _job=str(item[0]), domain=str(item[1]['domain']), settings=item[1]['settings'])
+        for project in running.keys():
+            runner_db = running[project]
+            for item in runner_db.iteritems():
+                spider_scheduler.schedule(project, str(item[1]['_spider']), _job=str(item[0]), domain=str(item[1]['domain']), settings=item[1]['settings'])
+            finished_jobs = get_spider_finished(self.config)
+            finished_db = finished_jobs[project]
+            for item in finished_db.iteritems():
+                item = json.loads(item[1])
+                pp = ScrapyProcessProtocol(item['slot'], item['project'], item['spider'], item['job'], item['env'], domain=item['domain'])
+                pp.end_time = parser.parse(item['end_time'])
+                pp.start_time = parser.parse(item['start_time'])
+                self.finished.append(pp)
 
-        finished_jobs = get_spider_finished(self.config)
-        finished_db = finished_jobs[project]
-        for item in finished_db.iteritems():
-            item = json.loads(item[1])
-            pp = ScrapyProcessProtocol(item['slot'], item['project'], item['spider'], item['job'], item['env'], domain=item['domain'])
-
-            pp.end_time = parser.parse(item['end_time'])
-
-            pp.start_time = parser.parse(item['start_time'])
-            self.finished.append(pp)
         for slot in range(self.max_proc):
             self._wait_for_project(slot)
         log.msg(format='Scrapyd %(version)s started: max_proc=%(max_proc)r, runner=%(runner)r',
